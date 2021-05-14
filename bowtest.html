@@ -1,0 +1,40 @@
+<html>
+  <input type="text" id="myText" />
+  <button type="button" onclick="readUntilClosed()">Connect</button>
+  <button id="cancelbow">Close</button>
+</html>
+
+<script>
+  if ("serial" in navigator) {
+    console.log("ports");
+  } else {
+    console.log("poo");
+  }
+
+  let connected = false;
+  let keepReading = true;
+  let reader;
+  var port;
+  async function readUntilClosed() {
+    if (!connected) {
+      port = await navigator.serial.requestPort();
+      await port.open({ baudRate: 115200 });
+    }
+    if (port) {
+      connected = true;
+    } else {
+      connected = false;
+    }
+
+    const textEncoder = new TextEncoderStream();
+    const writableStreamClosed = textEncoder.readable.pipeTo(port.writable);
+
+    const writer = textEncoder.writable.getWriter();
+    var x = document.getElementById("myText").value;
+    await writer.write(x);
+
+    document.getElementById("cancelbow").addEventListener("click", function () {
+      port.close();
+    });
+  }
+</script>

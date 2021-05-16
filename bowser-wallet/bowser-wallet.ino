@@ -39,8 +39,9 @@ void connectDevice() {
       Serial.println(command.substring(0, 7));
       if(command.substring(0, 7) == "CONNECT" ){
         String passReceived = command.substring(8, command.length());
-        Serial.println(passReceived);
+        Serial.println(passReceived[1]);
         M5.Lcd.setCursor(0, 0);
+        M5.Lcd.fillScreen(BLACK);
         M5.Lcd.setTextSize(2);
         M5.Lcd.setTextColor(RED);
         M5.Lcd.setCursor(0, 0);

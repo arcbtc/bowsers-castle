@@ -2,14 +2,7 @@
   <q-layout view="lHh Lpr lFf">
     <q-header elevated>
       <q-toolbar>
-        <q-btn
-          flat
-          dense
-          round
-          icon="menu"
-          aria-label="Menu"
-          @click="leftDrawerOpen = !leftDrawerOpen"
-        />
+
 
         <q-toolbar-title> Bowser Wallet </q-toolbar-title>
 
@@ -18,8 +11,9 @@
     </q-header>
 
     <q-drawer
+    v-show="leftDrawerOpen"
       v-model="leftDrawerOpen"
-      show-if-above
+
       bordered
       style="background-color: #1d1d1d"
     >
@@ -39,11 +33,11 @@
         src="https://i.imgur.com/CfwfjBK.png"
       />
     </q-drawer>
-
     <q-page-container>
       <router-view />
     </q-page-container>
   </q-layout>
+
 </template>
 
 <script>
@@ -94,17 +88,28 @@ const linksData = [
   },
 ];
 
+
 export default {
+  data() {
+    return {
+      leftDrawerOpen: false,
+      essentialLinks: linksData
+    };
+  },
   created() {
     this.$q.dark.set(true);
   },
   name: "MainLayout",
   components: { EssentialLink },
-  data() {
-    return {
-      leftDrawerOpen: false,
-      essentialLinks: linksData,
-    };
+  methods: {
+  launchPinPad(){
+    this.pinPad = true;
   },
+  loggedIn(){
+    
+    this.leftDrawerOpen = false;
+    }
+  },
+
 };
 </script>

@@ -30,7 +30,7 @@
       <img
         style="width: 50%"
         class="fixed-bottom-left"
-        src="https://i.imgur.com/CfwfjBK.png"
+        src="https://i.imgur.com/uJVGwhk.gif"
       />
     </q-drawer>
     <q-page-container>

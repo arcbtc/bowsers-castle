@@ -2,18 +2,28 @@
 #include <M5StickC.h>
 #include <EEPROM.h>
 #include <Electrum.h>
+#include "bowser.c"
 #include "decoy.h"
 #include "Bitcoin.h"
 #include "Hash.h"
 #include "SPIFFS.h"
+#include "FS.h"
 #include "PSBT.h"
-#include "bowser_map.c"
 
+bool isWallet = false;
+bool confirm = false;
 bool buttonA = false;
+bool buttonB = false;
+String passKey;
 String seedGenerateStr;
 String savedSeed;
 String seedGenerateArr[24];
 String command;
+String privateKey;
+String pubKey;
+String passkey;
+String hashed;
+String savedPinHash;
 int arr[] = {1, 2, 3, 4, 5, 6, 7, 8, 9};
 
 //========================================================================
@@ -22,6 +32,10 @@ void setup(){
   M5.begin();
   Serial.begin(115200);
   decoySetup();
+  if (!SPIFFS.begin(true))
+  {
+    return;
+  }
   M5.Lcd.setRotation(3);
   M5.Lcd.drawBitmap(0, 0, 160, 80, (uint8_t *)bowser_map);
   connectDevice();
@@ -75,26 +89,59 @@ void randoPinPad() {
 
 //========================================================================
 
+void shuffleArray(int * arr, int arrsize)
+{
+  int last = 0;
+  int temp = arr[last];
+  for (int i=0; i<arrsize; i++)
+  {
+    int index = random(arrsize);
+    arr[last] = arr[index];
+    last = index;
+  }
+  arr[last] = temp;
+}
+
+//========================================================================
+
 void connectDevice() {
   int stoploop = false;
   while(!stoploop){
-    if (Serial.available()) {
+    readCommands();
+  }
+}
+
+//========================================================================
+
+void readCommands() {
+      if (Serial.available()) {
       command = Serial.readStringUntil('\n');
       command.trim();
-      Serial.println(command.substring(0, 3));
-      //if(command.substring(0, 7) == "CONNECT" ){
-      //  passReceived();
-      //}
       if(command == "CONNECT" ){
-        shuffleArray(arr, 9);
-        randoPinPad();
+        checkForWallet();
+        if(isWallet) {
+          shuffleArray(arr, 9);
+          randoPinPad();
+        }
       }
-      if(command.substring(0, 3) == "PIN" ){
+      if(command.substring(0, 3) == "PIN" && isWallet){
         String thePin = command.substring(4, command.length());
         for (int i = 0; i < 8; i++) {
           int temp = String(thePin[i]).toInt();
-          Serial.print(arr[temp - 1]);
+          passkey = passkey + String(arr[temp - 1]);
+        }
+        enterPin(true);
+      }
+      if(command.substring(0, 3) == "PIN" && !isWallet){
+        String thePin = command.substring(4, command.length());
+        for (int i = 0; i < 8; i++) {
+          int temp = String(thePin[i]).toInt();
+          passkey = passkey + String(arr[temp - 1]);
         } 
+        enterPin(false);
+        if (!confirm){
+          randoPinPad();
+        }
       }
       if(command == "PROCESS"){
         processing();
@@ -103,10 +150,14 @@ void connectDevice() {
       if(command == "HARD RESET" ){
         hardReset();
       }
+      if(command == "SOFT RESET" ){
+        M5.Lcd.drawBitmap(0, 0, 160, 80, (uint8_t *)bowser_map);
+      }
+      if(command.substring(0, 7) == "RESTORE") {
+        restore();
+      }
     }
-  }
 }
-
 //========================================================================
 
 void processing() {
@@ -125,10 +176,35 @@ void hardReset() {
     delay(2000);
     wipeSpiffs();
     seedMaker();
-    //pinMaker();
+    shuffleArray(arr, 9);
+    randoPinPad();
+    connectDevice();
+}
+
+void restore() {
+    restoreFromSeed(command.substring(8, command.length()));
 }
 //========================================================================
 
+void checkForWallet() {
+  File otherFile = SPIFFS.open("/key.txt");
+  savedSeed = otherFile.readStringUntil('\n');
+  otherFile.close();
+  isWallet = false;
+  if (savedSeed.length() < 30)
+  {
+      M5.Lcd.fillScreen(BLACK);
+      M5.Lcd.setCursor(0, 10);
+      M5.Lcd.setTextSize(2);
+      M5.Lcd.setTextColor(RED);
+      M5.Lcd.println("ERROR:");
+      M5.Lcd.println("No wallet");
+      M5.Lcd.println("`HARD RESET`");
+   }
+   else{
+     isWallet = true;
+   }
+}
 void wipeSpiffs()
 {
   File fileKey = SPIFFS.open("/key.txt", FILE_WRITE);
@@ -145,29 +221,13 @@ void wipeSpiffs()
 //========================================================================
 
 void passReceived() {
-        String passReceived = command.substring(8, command.length());
-        Serial.println(passReceived[1]);
-        M5.Lcd.setCursor(0, 0);
-        M5.Lcd.fillScreen(BLACK);
-        M5.Lcd.setTextSize(2);
-        M5.Lcd.setTextColor(RED);
-        M5.Lcd.setCursor(0, 0);
-        M5.Lcd.println(passReceived);
-}
-
-//========================================================================
-
-void shuffleArray(int * arr, int arrsize)
-{
-  int last = 0;
-  int temp = arr[last];
-  for (int i=0; i<arrsize; i++)
-  {
-    int index = random(arrsize);
-    arr[last] = arr[index];
-    last = index;
-  }
-  arr[last] = temp;
+   String passReceived = command.substring(8, command.length());
+   M5.Lcd.setCursor(0, 0);
+   M5.Lcd.fillScreen(BLACK);
+   M5.Lcd.setTextSize(2);
+  M5.Lcd.setTextColor(RED);
+   M5.Lcd.setCursor(0, 0);
+    M5.Lcd.println(passReceived);
 }
 
 //========================================================================
@@ -217,8 +277,10 @@ void seedMaker()
         buttonA = true;
       }
       M5.update();
+      readCommands();
     }
     buttonA = false;
+    
   }
   M5.Lcd.fillScreen(BLACK);
   M5.Lcd.setCursor(0, 10);
@@ -253,17 +315,11 @@ void seedMaker()
         buttonA = true;
       }
       M5.update();
+      readCommands();
     }
     buttonA = false;
   }
-  M5.Lcd.fillScreen(BLACK);
-  M5.Lcd.setCursor(0, 10);
-  M5.Lcd.println("");
-  M5.Lcd.println("");
-  M5.Lcd.println("");
-  M5.Lcd.println(" Keep word backup");
-  M5.Lcd.println(" very secure and private!");
-
+  
   File file = SPIFFS.open("/key.txt", FILE_WRITE);
   file.print(seedGenerateStr.substring(0, seedGenerateStr.length()) + "\n");
   file.close();
@@ -277,9 +333,57 @@ void seedMaker()
   savedSeed = otherFile.readStringUntil('\n');
   otherFile.close();
 
-  Serial.println(char_array);
+  M5.Lcd.fillScreen(BLACK);
+  M5.Lcd.setCursor(0, 10);
+  M5.Lcd.println("");
+  M5.Lcd.println("");
+  M5.Lcd.println("");
+  M5.Lcd.println(" Now its time to set an 8 digit pin!");
+  Serial.flush();
+  Serial.print("PINSTART,");
+  Serial.print("PINSTART,");
+  Serial.println("OVER,");
+  delay(4000);
+}
 
-  delay(6000);
+//========================================================================
+
+void enterPin(bool set)
+{
+   uint8_t newPassKeyResult[32];
+   sha256(passKey, newPassKeyResult);
+   hashed = toHex(newPassKeyResult, 32);
+
+   if (set == false){
+     File file = SPIFFS.open("/pass.txt", FILE_WRITE);
+     file.print(hashed + "\n");
+     file.close();
+   }
+   File otherFile = SPIFFS.open("/pass.txt");
+   savedPinHash = otherFile.readStringUntil('\n');
+   otherFile.close();
+
+   if (savedPinHash == hashed)
+   {
+     getKeys(savedSeed, passKey);
+     confirm = true;
+     Serial.println("PINPASS,");
+     return;
+   }
+   else if (savedPinHash != hashed && set == false)
+   {
+     M5.Lcd.fillScreen(BLACK);
+     M5.Lcd.setTextSize(2);
+     M5.Lcd.setTextColor(RED);
+     M5.Lcd.setCursor(0, 20);
+     M5.Lcd.println("");
+     M5.Lcd.print("Wrong pin! Try again.");
+     passKey = "";
+     Serial.println("PINFAIL,");
+     delay(3000);
+   }
+  M5.update();
+  confirm = false;
 }
 
 //========================================================================
@@ -313,6 +417,7 @@ void writeFile(fs::FS &fs, const char *path, const char *message)
   if (!file)
   {
     M5.Lcd.println("   Failed to open file for writing");
+    delay(2000);
     return;
   }
   if (file.print(message))
@@ -321,5 +426,114 @@ void writeFile(fs::FS &fs, const char *path, const char *message)
   else
   {
     M5.Lcd.println("   Write failed");
+    delay(2000);
   }
+}
+
+//========================================================================
+
+void getKeys(String mnemonic, String password)
+{
+
+  HDPrivateKey hd(mnemonic, password);
+
+  if (!hd)
+  { // check if it is valid
+    return;
+  }
+
+  HDPrivateKey account = hd.derive("m/84'/0'/0'/");
+
+  privateKey = account;
+
+  pubKey = account.xpub();
+}
+
+//========================================================================
+
+void seedChecker()
+{
+  File otherFile = SPIFFS.open("/key.txt");
+  savedSeed = otherFile.readStringUntil('\n');
+  otherFile.close();
+  int seedCount = 0;
+
+  for (int x = 0; x < 24; x++)
+  {
+    for (int z = 0; z < 2048; z++)
+    {
+      if (getValue(savedSeed, ' ', x) == seedWords[z])
+      {
+        seedCount = seedCount + 1;
+      }
+    }
+  }
+
+  if (int(seedCount) != 24)
+  {
+    M5.Lcd.fillScreen(BLACK);
+    M5.Lcd.setCursor(0, 90);
+    M5.Lcd.setTextColor(RED);
+    M5.Lcd.setTextSize(2);
+    M5.Lcd.println("   Error: Reset device");
+    M5.Lcd.println("   or restore from seed");
+    M5.Lcd.println("   (See documentation)");
+    delay(99999999999999999999999);
+  }
+  else
+  {
+    return;
+  }
+}
+
+//========================================================================
+
+void restoreFromSeed(String theSeed)
+{
+
+  M5.Lcd.fillScreen(BLACK);
+  M5.Lcd.setCursor(0, 20);
+  M5.Lcd.setTextSize(3);
+  M5.Lcd.setTextColor(GREEN);
+  M5.Lcd.println("RESTORE FROM SEED");
+  M5.Lcd.setCursor(0, 85);
+  M5.Lcd.setTextColor(RED);
+  M5.Lcd.setTextSize(2);
+  M5.Lcd.println("Device will be wiped");
+  M5.Lcd.println("then restored from seed");
+  M5.Lcd.println("are you sure?");
+  M5.Lcd.setTextSize(2);
+  M5.Lcd.setCursor(0, 220);
+  M5.Lcd.println("A to continue, B to cancel");
+
+  while (buttonA == false && buttonB == false)
+  {
+    if (M5.BtnA.wasReleased())
+    {
+      buttonA = true;
+    }
+    if (M5.BtnB.wasReleased())
+    {
+      buttonB = true;
+    }
+    M5.update();
+  }
+  if (buttonA == true)
+  {
+    M5.Lcd.fillScreen(BLACK);
+    M5.Lcd.setCursor(0, 100);
+    M5.Lcd.setTextColor(GREEN);
+    M5.Lcd.setTextSize(2);
+    M5.Lcd.println("     Saving seed...");
+    delay(2000);
+    File file = SPIFFS.open("/key.txt", FILE_WRITE);
+    file.print(theSeed + "\n");
+    file.close();
+    File otherFile = SPIFFS.open("/key.txt");
+    savedSeed = otherFile.readStringUntil('\n');
+    otherFile.close();
+  }
+
+  buttonA = false;
+  buttonB = false;
 }

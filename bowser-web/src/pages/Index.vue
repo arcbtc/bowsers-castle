@@ -26,6 +26,36 @@
       </q-card>
     </q-dialog>
 
+    <q-dialog persistent v-model="waitUntil">
+      <q-card>
+        <q-card-section class="row q-mx-auto q-pt-xl">
+          <div class="row">
+            <div class="col-10">
+              Please follow the instructions on your device...
+              <br />Backup your word list somewhere safe!
+            </div>
+            <div class="col-2">
+              <img
+                src="https://i.imgur.com/rnPG6wd.gif"
+                style="width:70px"
+                class="q-mx-auto "
+              />
+            </div>
+          </div>
+        </q-card-section>
+
+        <q-card-actions align="right">
+          <q-btn
+            @click="softResetReload()"
+            outline
+            dense
+            style="color: goldenrod;"
+            label="Cancel"
+          ></q-btn>
+        </q-card-actions>
+      </q-card>
+    </q-dialog>
+
     <q-dialog v-model="pinPad" persistent>
       <q-card>
         <center>
@@ -205,10 +235,15 @@ export default {
     return {
       pinPad: false,
       confirmDelete: false,
+      waitUntil: false,
       pin: [],
       pinTemp: "",
       port: {},
-      writer: {}
+      writer: {},
+      writableStreamClosed: {},
+      reader: null,
+      readableStreamClosed: {},
+      breakBool: false
     };
   },
   name: "PageIndex",
@@ -230,53 +265,115 @@ export default {
     async connectDevice() {
       self = this;
       let connected = false;
-      let loggedIn = false;
-      let keepReading = true;
-      let reader;
       if (!connected) {
         self.port = await navigator.serial.requestPort();
-        await self.port.open({ baudRate: 115200 });
       }
       if (self.port) {
         self.pin = [];
         connected = true;
-        await this.connectWriter();
-        this.launchPinPad();
-        this.callPin();
+        await this.launchPinPad();
+        await this.callPin();
       } else {
         connected = false;
       }
     },
 
     ////////////////////COMMANDS////////////////////////
-    connectWriter() {
+
+    //READING SERIAL//
+
+    async readPort() {
       self = this;
-      console.log(self.port);
-      const textEncoder = new TextEncoderStream();
-      const writableStreamClosed = textEncoder.readable.pipeTo(
-        self.port.writable
-      );
-      self.writer = textEncoder.writable.getWriter();
+      await self.port.open({ baudRate: 115200 });
+      while (self.port && self.port.readable) {
+        try {
+          self.reader = await self.port.readable.getReader();
+          for (;;) {
+            const { value, done } = await self.reader.read();
+            var message = await self.ab2str(value);
+            var split = await message.split(",");
+            console.log(split);
+            if (split.includes("OVER")) {
+              self.breakBool = true;
+              break;
+            }
+            if (split.includes("PINSTART")) {
+              self.waitUntil = false;
+            }
+            if (message == "PINPASS") {
+              self.waitUntil = false;
+            }
+            if (message == "PINFAIL") {
+              await self.softResetReload();
+            }
+          }
+          self.reader.releaseLock();
+          self.reader = undefined;
+        } catch (e) {}
+      }
+      if (self.port) {
+        try {
+          await self.port.close();
+        } catch (e) {}
+      }
     },
+
+    //WRITING TO SERIAL//
+
+    async writeData(data) {
+      self = this;
+      const encoder = await new TextEncoder();
+      await self.port.open({ baudRate: 115200 });
+      const writer = await self.port.writable.getWriter();
+      await writer.write(encoder.encode(data));
+      await writer.releaseLock();
+      if (self.port) {
+        try {
+          await self.port.close();
+        } catch (e) {}
+      }
+    },
+
     async hardReset() {
-      await this.writer.write("HARD RESET");
+      self = this;
+      self.confirmDelete = false;
+      self.waitUntil = true;
+      await self.writeData("HARD RESET");
+
+      var refreshIntervalId = setInterval(async function() {
+        await self.readPort();
+        if (self.breakBool == true) {
+          clearInterval(refreshIntervalId);
+        }
+        }, 4000);
+      self.breakBool = false;
+    },
+    async softResetReload() {
+      this.writeData("SOFT RESET");
+      location.reload();
+    },
+    async softReset() {
+      this.writeData("SOFT RESET");
     },
     async callPin() {
-      await this.writer.write("CONNECT");
+      this.writeData("CONNECT");
     },
     async sendPin() {
       self = this;
       self.sendProcessing();
-      await setTimeout(async function(){   
-        console.log(self.pin); 
+      await setTimeout(async function() {
+        console.log(self.pin);
         console.log(self.pin.join().replaceAll(",", ""));
-        self.writer.write("PIN " + self.pin.join().replaceAll(",", ""));     
-       }, 2000);
-        
+        self.writeData("PIN " + self.pin.join().replaceAll(",", ""));
+      }, 2000);
+      // await this.readIncoming();
     },
     async sendProcessing() {
-      await this.writer.write("PROCESS");
-    }
+      this.writeData("PROCESS");
+    },
+    async ab2str(buf) {
+  return String.fromCharCode.apply(null, new Uint16Array(buf));
+}
   }
 };
 </script>

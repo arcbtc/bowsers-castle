@@ -11,6 +11,8 @@
   },
   "dependencies": {
     "@quasar/extras": "^1.0.0",
+    "bip32": "^2.0.6",
+    "bitcoinjs-lib": "^5.2.0",
     "core-js": "^3.6.5",
     "quasar": "^1.0.0"
   },

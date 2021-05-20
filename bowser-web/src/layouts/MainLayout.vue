@@ -2,18 +2,18 @@
   <q-layout view="lHh Lpr lFf">
     <q-header elevated>
       <q-toolbar>
+        <img src="~assets/bowser_logo.png" />
+        <q-toolbar-title> </q-toolbar-title>
 
-
-        <q-toolbar-title> Bowser Wallet </q-toolbar-title>
-
-        <div>Version v0.01</div>
+        <div>
+          Version v0.01
+        </div>
       </q-toolbar>
     </q-header>
 
     <q-drawer
-    v-show="leftDrawerOpen"
+      v-show="currentRouteName"
       v-model="leftDrawerOpen"
-
       bordered
       style="background-color: #1d1d1d"
     >
@@ -37,7 +37,6 @@
       <router-view />
     </q-page-container>
   </q-layout>
-
 </template>
 
 <script>
@@ -48,68 +47,75 @@ const linksData = [
     title: "Docs",
     caption: "quasar.dev",
     icon: "school",
-    link: "https://quasar.dev",
+    link: "https://quasar.dev"
   },
   {
     title: "Github",
     caption: "github.com/quasarframework",
     icon: "code",
-    link: "https://github.com/quasarframework",
+    link: "https://github.com/quasarframework"
   },
   {
     title: "Discord Chat Channel",
     caption: "chat.quasar.dev",
     icon: "chat",
-    link: "https://chat.quasar.dev",
+    link: "https://chat.quasar.dev"
   },
   {
     title: "Forum",
     caption: "forum.quasar.dev",
     icon: "record_voice_over",
-    link: "https://forum.quasar.dev",
+    link: "https://forum.quasar.dev"
   },
   {
     title: "Twitter",
     caption: "@quasarframework",
     icon: "rss_feed",
-    link: "https://twitter.quasar.dev",
+    link: "https://twitter.quasar.dev"
   },
   {
     title: "Facebook",
     caption: "@QuasarFramework",
     icon: "public",
-    link: "https://facebook.quasar.dev",
+    link: "https://facebook.quasar.dev"
   },
   {
     title: "Quasar Awesome",
     caption: "Community Quasar projects",
     icon: "favorite",
-    link: "https://awesome.quasar.dev",
-  },
+    link: "https://awesome.quasar.dev"
+  }
 ];
-
 
 export default {
   data() {
     return {
       leftDrawerOpen: false,
-      essentialLinks: linksData
+      essentialLinks: linksData,
+      showDraw: "fgndsf"
     };
+  },
+  computed: {
+    currentRouteName() {
+      if (this.$router.history.current.path.length == 1) {
+        return true;
+      } else {
+        return false;
+      }
+    }
   },
   created() {
     this.$q.dark.set(true);
+
   },
   name: "MainLayout",
   components: { EssentialLink },
-  methods: {
-  launchPinPad(){
-    this.pinPad = true;
-  },
-  loggedIn(){
-    
-    this.leftDrawerOpen = false;
-    }
-  },
 
+  methods: {
+    launchPinPad() {
+      this.pinPad = true;
+    },
+    loggedIn() {}
+  }
 };
 </script>

@@ -12,9 +12,19 @@
 let portCounter = 1;
 let port;
 let reader;
+let writer;
 
 async function readPort(){
+  try {
   await port.open({ baudRate: 115200 });
+} catch (e) {
+  try {
+      await reader.releaseLock();
+      reader = undefined;
+      await port.close();
+    } catch (e) {
+    }
+    }
   while (port && port.readable) {
     try {
       reader = port.readable.getReader();
@@ -53,18 +63,24 @@ async function ab2str(buf) {
 //////////////////////////////
 
 
-async function writeData(data){
+async function writeData(){
   const encoder = await new TextEncoder();
-  await port.open({ baudRate: 115200 });
-  const writer = await port.writable.getWriter();
-  await writer.write(encoder.encode(data));
-  await writer.releaseLock();
-  if (port) {
-    try {
-      await port.close();
+  try {
+    await port.open({ baudRate: 115200 });
     } catch (e) {
+    try {
+      await writer.releaseLock();
+      writer = undefined;
+      await port.close();
+      await port.open({ baudRate: 115200 });
+    } catch (e) {}
     }
-  }
+    writer = await port.writable.getWriter();
+    console.log("Writing " + document.getElementById("myText").value);
+    await writer.write(encoder.encode(document.getElementById("myText").value));
+    await writer.releaseLock();
+    writer = undefined;
+    await port.close();
 }
 
 </script>

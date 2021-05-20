@@ -14,6 +14,7 @@ bool isWallet = false;
 bool confirm = false;
 bool buttonA = false;
 bool buttonB = false;
+bool firstWallet = false;
 String passKey;
 String seedGenerateStr;
 String savedSeed;
@@ -24,6 +25,7 @@ String pubKey;
 String passkey;
 String hashed;
 String savedPinHash;
+String freshPub;
 int arr[] = {1, 2, 3, 4, 5, 6, 7, 8, 9};
 
 //========================================================================
@@ -31,6 +33,7 @@ int arr[] = {1, 2, 3, 4, 5, 6, 7, 8, 9};
 void setup(){
   M5.begin();
   Serial.begin(115200);
+  Serial.print("bowser,");
   decoySetup();
   if (!SPIFFS.begin(true))
   {
@@ -124,20 +127,24 @@ void readCommands() {
           randoPinPad();
         }
       }
+      //for logging in
       if(command.substring(0, 3) == "PIN" && isWallet){
         String thePin = command.substring(4, command.length());
         for (int i = 0; i < 8; i++) {
           int temp = String(thePin[i]).toInt();
           passkey = passkey + String(arr[temp - 1]);
         }
+        //Set true just to verify
         enterPin(true);
       }
+      //first submitting
       if(command.substring(0, 3) == "PIN" && !isWallet){
         String thePin = command.substring(4, command.length());
         for (int i = 0; i < 8; i++) {
           int temp = String(thePin[i]).toInt();
           passkey = passkey + String(arr[temp - 1]);
         } 
+        //Set false to write pin to SPIFFS
         enterPin(false);
         if (!confirm){
           randoPinPad();
@@ -269,6 +276,7 @@ void seedMaker()
     M5.Lcd.setTextColor(GREEN);
     M5.Lcd.println("  Btn A, next");
     M5.Lcd.println("");
+    Serial.print(String(z + 1) + ",");
     
     while (buttonA == false)
     {
@@ -307,6 +315,7 @@ void seedMaker()
     M5.Lcd.setTextColor(GREEN);
     M5.Lcd.println("  Btn A, next");
     M5.Lcd.println("");
+    Serial.print(String(z + 1) + ",");
 
     while (buttonA == false)
     {
@@ -332,7 +341,7 @@ void seedMaker()
   File otherFile = SPIFFS.open("/key.txt");
   savedSeed = otherFile.readStringUntil('\n');
   otherFile.close();
-
+  isWallet = false;
   M5.Lcd.fillScreen(BLACK);
   M5.Lcd.setCursor(0, 10);
   M5.Lcd.println("");
@@ -341,9 +350,9 @@ void seedMaker()
   M5.Lcd.println(" Now its time to set an 8 digit pin!");
   Serial.flush();
   Serial.print("PINSTART,");
+  delay(3000);
   Serial.print("PINSTART,");
-  Serial.println("OVER,");
-  delay(4000);
+  Serial.flush();
 }
 
 //========================================================================
@@ -365,27 +374,89 @@ void enterPin(bool set)
 
    if (savedPinHash == hashed)
    {
+     isWallet = true;
      getKeys(savedSeed, passKey);
      confirm = true;
-     Serial.println("PINPASS,");
+     getAddress();
+     M5.Lcd.fillScreen(BLACK);
+     M5.Lcd.setTextSize(2);
+     M5.Lcd.setTextColor(GREEN);
+     M5.Lcd.setCursor(0, 10);
+     M5.Lcd.println("Connected");
+     M5.Lcd.println("Bwahahaha!");
+     M5.Lcd.setTextSize(1);
+     M5.Lcd.println("Latest address:");
+     M5.Lcd.println(freshPub);
+     Serial.print(pubKey + ",");
+     delay(1000);
+     Serial.print("%P1" + pubKey.substring(0, 50) + ",");
+     delay(1000);
+     Serial.print("%P2" + pubKey.substring(50, 100) + ",");
+     delay(1000);
+     Serial.print("%P3" + pubKey.substring(100, 150) + ",");
+     delay(1000);
+     Serial.print("%P1" + pubKey.substring(0, 50) + ",");
+     delay(1000);
+     Serial.print("%P2" + pubKey.substring(50, 100) + ",");
+     delay(1000);
+     Serial.print("%P3" + pubKey.substring(100, 150) + ",");
+     delay(1000);
+     Serial.print(freshPub + ",");
+     Serial.print("PINPASS,");
+     delay(2000);
+     Serial.print("PINPASS,");
      return;
    }
-   else if (savedPinHash != hashed && set == false)
+   else if (savedPinHash != hashed)
    {
      M5.Lcd.fillScreen(BLACK);
      M5.Lcd.setTextSize(2);
      M5.Lcd.setTextColor(RED);
      M5.Lcd.setCursor(0, 20);
-     M5.Lcd.println("");
-     M5.Lcd.print("Wrong pin! Try again.");
+     M5.Lcd.println("Wrong pin!");
+     M5.Lcd.println("Try again");
      passKey = "";
-     Serial.println("PINFAIL,");
+     Serial.print("PINFAIL,");
      delay(3000);
+     Serial.print("PINFAIL,");
+     shuffleArray(arr, 9);
+     randoPinPad();
    }
   M5.update();
   confirm = false;
 }
 
+//========================================================================
+
+void updateAddress()
+{
+  HDPublicKey hd(pubKey);
+
+  File otherFile = SPIFFS.open("/num.txt");
+  String pubNum = otherFile.readStringUntil('\n');
+  otherFile.close();
+  
+  int pubNumm = pubNum.toInt() + 1;
+  File file = SPIFFS.open("/num.txt", FILE_WRITE);
+  file.print(pubNumm);
+  file.close();
+}
+
+//========================================================================
+
+void getAddress()
+{
+  HDPublicKey hd(pubKey);
+
+  File otherFile = SPIFFS.open("/num.txt");
+  String pubNum = otherFile.readStringUntil('\n');
+  otherFile.close();
+
+  int pubNumm = pubNum.toInt();
+  String path = String("m/0/") + pubNumm;
+  freshPub = hd.derive(path).address();
+  
+}
 //========================================================================
 
 String getValue(String data, char separator, int index)
@@ -447,6 +518,7 @@ void getKeys(String mnemonic, String password)
   privateKey = account;
 
   pubKey = account.xpub();
+
 }
 
 //========================================================================

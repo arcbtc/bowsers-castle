@@ -1,14 +1,31 @@
 <template>
   <q-page class="flex flex-center">
-    <q-btn
-      size="35px"
-      rounded
-      color="primary"
-      @click="connectDevice()"
-      icon="link"
-    >
-      Connect Device</q-btn
-    >
+    <div class="column">
+      <div class="col-11">
+        <center>
+          <q-btn
+            size="35px"
+            rounded
+            color="primary"
+            @click="connectDevice()"
+            icon="link"
+          >
+            Connect Device</q-btn
+          >
+        </center>
+      </div>
+      <div class="col-1">
+        <center>
+          <q-card class="q-mt-md">
+            Bowser Wallet is free and open-source, runs 100% in <br />
+            your browser, can be used locally and can be used offline!<br />
+            <a href="https://github.com/arcbtc/little-bowser"
+              >https://github.com/arcbtc/little-bowser</a
+            >
+          </q-card>
+        </center>
+      </div>
+    </div>
 
     <q-dialog v-model="confirmDelete">
       <q-card>
@@ -31,8 +48,8 @@
         <q-card-section class="row q-mx-auto q-pt-xl">
           <div class="row">
             <div class="col-10">
-              Please follow the instructions on your device...
-              <br />Backup your word list somewhere safe!
+              Copy your backup words somewhere secure and private,
+              <br />then enter an 8 digit pin, using refernce bowser pinpad.
             </div>
             <div class="col-2">
               <img
@@ -239,11 +256,12 @@ export default {
       pin: [],
       pinTemp: "",
       port: {},
-      writer: {},
       writableStreamClosed: {},
       reader: null,
+      writer: null,
       readableStreamClosed: {},
-      breakBool: false
+      breakBool: false,
+      readMessage: []
     };
   },
   name: "PageIndex",
@@ -259,9 +277,6 @@ export default {
     }
   },
   methods: {
-    launchPinPad() {
-      this.pinPad = true;
-    },
     async connectDevice() {
       self = this;
       let connected = false;
@@ -271,7 +286,7 @@ export default {
       if (self.port) {
         self.pin = [];
         connected = true;
-        await this.launchPinPad();
+        this.pinPad = true;
         await this.callPin();
       } else {
         connected = false;
@@ -284,49 +299,50 @@ export default {
 
     async readPort() {
       self = this;
-      await self.port.open({ baudRate: 115200 });
-      while (self.port && self.port.readable) {
+      try {
+        await self.port.open({ baudRate: 115200 });
+      } catch (e) {
         try {
-          self.reader = await self.port.readable.getReader();
-          for (;;) {
-            const { value, done } = await self.reader.read();
-            var message = await self.ab2str(value);
-            var split = await message.split(",");
-            console.log(split);
-            if (split.includes("OVER")) {
-              self.breakBool = true;
-              break;
-            }
-            if (split.includes("PINSTART")) {
-              self.waitUntil = false;
-            }
-            if (message == "PINPASS") {
-              self.waitUntil = false;
-            }
-            if (message == "PINFAIL") {
-              await self.softResetReload();
-            }
-          }
-          self.reader.releaseLock();
+          await self.reader.releaseLock();
           self.reader = undefined;
+          await self.port.close();
+          await self.port.open({ baudRate: 115200 });
         } catch (e) {}
       }
+      try {
+        self.reader = self.port.readable.getReader();
+        const { value, done } = await self.reader.read();
+        if (value) {
+          self.readMessage = value;
+        }
+        await self.reader.releaseLock();
+        self.reader = undefined;
+      } catch (e) {}
       if (self.port) {
         try {
           await self.port.close();
         } catch (e) {}
       }
     },
-
     //WRITING TO SERIAL//
 
     async writeData(data) {
       self = this;
-      const encoder = await new TextEncoder();
-      await self.port.open({ baudRate: 115200 });
-      const writer = await self.port.writable.getWriter();
-      await writer.write(encoder.encode(data));
-      await writer.releaseLock();
+      const encoder = new TextEncoder();
+      try {
+        await self.port.open({ baudRate: 115200 });
+      } catch (e) {
+        try {
+          await self.writer.releaseLock();
+          self.writer = undefined;
+          await self.port.close();
+          await self.port.open({ baudRate: 115200 });
+        } catch (e) {}
+      }
+      self.writer = await self.port.writable.getWriter();
+      await self.writer.write(encoder.encode(data));
+      await self.writer.releaseLock();
+      self.writer = undefined;
       if (self.port) {
         try {
           await self.port.close();
@@ -342,10 +358,19 @@ export default {
 
       var refreshIntervalId = setInterval(async function() {
         await self.readPort();
-        if (self.breakBool == true) {
+        var hodler = self.readMessage;
+        const hodlerString = await self.ab2str(hodler);
+        console.log(hodlerString);
+
+        var hodlerArr = hodlerString.split(",");
+        console.log(hodlerArr);
+
+        if (hodlerArr.includes("PINSTART") == true) {
+          self.waitUntil = false;
+          self.breakBool = true;
           clearInterval(refreshIntervalId);
         }
-        }, 4000);
+      }, 2000);
       self.breakBool = false;
     },
     async softResetReload() {
@@ -367,13 +392,32 @@ export default {
         self.writeData("PIN " + self.pin.join().replaceAll(",", ""));
       }, 2000);
       // await this.readIncoming();
+      var refreshIntervalId = setInterval(async function() {
+        await self.readPort();
+        var hodler = self.readMessage;
+        const hodlerString = await self.ab2str(hodler);
+        var hodlerArr = hodlerString.split(",");
+        console.log(hodlerArr);
+
+        if (hodlerArr.includes("PINPASS") == true) {
+          self.pinPad = false;
+          self.leftDrawerOpen = true;
+          clearInterval(refreshIntervalId);
+        }
+        if (hodlerArr.includes("PINFAIL") == true) {
+          console.log("failed");
+          self.pin = [];
+          clearInterval(refreshIntervalId);
+        }
+      }, 2000);
     },
     async sendProcessing() {
       this.writeData("PROCESS");
     },
     async ab2str(buf) {
-  return String.fromCharCode.apply(null, new Uint16Array(buf));
-}
-  }
+      return String.fromCharCode.apply(null, new Uint16Array(buf));
+    }
+  },
+  created() {}
 };
 </script>

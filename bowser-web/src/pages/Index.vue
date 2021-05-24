@@ -31,7 +31,6 @@
       <q-card>
         <q-card-section class="row q-mx-auto q-pt-xl">
           Are you sure you want to delete EVERYTHING and hard reset this device?
-          
         </q-card-section>
         <q-card-actions align="right">
           <q-btn
@@ -91,9 +90,8 @@
 
     <q-dialog v-model="pinPad" persistent>
       <q-card>
-        <center > 
+        <center>
           <p
-
             dense
             class="q-pt-xl"
             style="font-size: 50px; line-height: 60%;"
@@ -105,11 +103,13 @@
               >or
               <q-btn
                 flat
+                :disabled="firstPin == 1"
                 @click="confirmDelete = true"
                 dense
                 color="primary"
                 label="hard reset"/>/<q-btn
                 flat
+                :disabled="firstPin == 1"
                 @click="confirmDelete = true"
                 dense
                 color="primary"
@@ -126,14 +126,11 @@
             {{ pinAmount }}
           </p>
         </center>
-        <q-card-section
-          class="row q-mx-auto q-pt-none"
-          style="width:70%;"
-        >
+        <q-card-section class="row q-mx-auto q-pt-none" style="width:70%;">
           <div class="row" style="width:100%;">
             <div class="col">
               <q-btn
-              disabled="yeshww == 0"
+                :disabled="yesHW == 0"
                 unelevated
                 outline
                 color="primary"
@@ -146,7 +143,7 @@
             </div>
             <div class="col">
               <q-btn
-              disabled="yeshww == 0"
+                :disabled="yesHW == 0"
                 unelevated
                 @click="pin.push(2)"
                 style="width:100%;"
@@ -159,7 +156,7 @@
             </div>
             <div class="col">
               <q-btn
-              disabled="yeshww == 0"
+                :disabled="yesHW == 0"
                 unelevated
                 @click="pin.push(3)"
                 size="xl"
@@ -175,7 +172,7 @@
           <div class="row" style="width:100%;">
             <div class="col">
               <q-btn
-              disabled="yeshww == 0"
+                :disabled="yesHW == 0"
                 unelevated
                 @click="pin.push(4)"
                 style="width:100%;"
@@ -188,7 +185,7 @@
             </div>
             <div class="col">
               <q-btn
-              disabled="yeshww == 0"
+                :disabled="yesHW == 0"
                 unelevated
                 @click="pin.push(5)"
                 style="width:100%;"
@@ -201,7 +198,7 @@
             </div>
             <div class="col">
               <q-btn
-              disabled="yeshww == 0"
+                :disabled="yesHW == 0"
                 unelevated
                 @click="pin.push(6)"
                 size="xl"
@@ -217,7 +214,7 @@
           <div class="row" style="width:100%;">
             <div class="col">
               <q-btn
-              disabled="yeshww == 0"
+                :disabled="yesHW == 0"
                 unelevated
                 @click="pin.push(7)"
                 style="width:100%;"
@@ -230,7 +227,7 @@
             </div>
             <div class="col">
               <q-btn
-              disabled="yeshww == 0"
+                :disabled="yesHW == 0"
                 unelevated
                 @click="pin.push(8)"
                 style="width:100%;"
@@ -243,7 +240,7 @@
             </div>
             <div class="col">
               <q-btn
-              disabled="yeshww == 0"
+                :disabled="yesHW == 0"
                 unelevated
                 @click="pin.push(9)"
                 size="xl"
@@ -282,8 +279,8 @@
 
 <script>
 const bjs = require("bitcoinjs-lib");
-const bip32 = require("bip32");
-import { QSpinnerGears } from 'quasar'
+var b58 = require("bs58check");
+import { QSpinnerGears } from "quasar";
 export default {
   data() {
     return {
@@ -300,7 +297,8 @@ export default {
       readableStreamClosed: {},
       breakBool: false,
       readMessage: [],
-      yeshww: false
+      yesHW: 0,
+      firstPin: 0
     };
   },
   name: "PageIndex",
@@ -377,10 +375,12 @@ export default {
           await self.port.open({ baudRate: 115200 });
         } catch (e) {}
       }
-      self.writer = await self.port.writable.getWriter();
-      await self.writer.write(encoder.encode(data));
-      await self.writer.releaseLock();
-      self.writer = undefined;
+      try {
+        self.writer = await self.port.writable.getWriter();
+        await self.writer.write(encoder.encode(data));
+        await self.writer.releaseLock();
+        self.writer = undefined;
+      } catch (e) {}
       if (self.port) {
         try {
           await self.port.close();
@@ -390,14 +390,15 @@ export default {
 
     async hardReset() {
       self = this;
+      self.firstPin = 1;
       self.confirmDelete = false;
       self.waitUntil = true;
       self.$q.notify({
         spinner: QSpinnerGears,
-        message: 'Wiping EVERYTHING...',
+        message: "Wiping EVERYTHING...",
         timeout: 6000
-      })
-      await self.writeData("HARD RESET");
+      });
+      await self.writeData("HARDRESET");
 
       var refreshIntervalId = setInterval(async function() {
         await self.readPort();
@@ -409,6 +410,7 @@ export default {
         console.log(hodlerArr);
 
         if (hodlerArr.includes("PINSTART") == true) {
+          self.yesHW = 1;
           self.waitUntil = false;
           self.breakBool = true;
           self.$q.notify({
@@ -422,28 +424,29 @@ export default {
       self.breakBool = false;
     },
     async softResetReload() {
-      this.writeData("SOFT RESET");
+      this.writeData("SOFTRESET");
       location.reload();
     },
     async softReset() {
-      this.writeData("SOFT RESET");
+      this.writeData("SOFTRESET");
     },
     async callPin() {
       self = this;
       self.writeData("CONNECT");
       var counter = 0;
-       self.$q.notify({
+      self.$q.notify({
         spinner: QSpinnerGears,
-        message: 'connecting...',
+        message: "connecting...",
         timeout: 2000
-      })
+      });
       var refreshIntervalId = setInterval(async function() {
         await self.readPort();
         var hodler = self.readMessage;
         const hodlerString = await self.ab2str(hodler);
-        var hodlerArr = hodlerString.split(",");
+        var hodlerArr = await hodlerString.split(",");
+        console.log(hodlerArr);
         if (hodlerArr.includes("NOHWW") == true) {
-          self.yeshww = false;
+          self.yesHW = 0;
           self.pinPad = true;
           self.$q.notify({
             message: "No wallet found on device",
@@ -452,9 +455,9 @@ export default {
           clearInterval(refreshIntervalId);
         }
         if (hodlerArr.includes("YESHWW") == true) {
-          self.yeshww = true;
+          self.yesHW = 1;
           self.pinPad = true;
-          self.writeData("HANDSHAKE");
+          await self.writeData("HANDSHAKE");
           self.$q.notify({
             message: "Wallet found!",
             caption: "Please enter pin",
@@ -478,11 +481,14 @@ export default {
       sessionStorage.setItem("%P1", "");
       sessionStorage.setItem("%P2", "");
       sessionStorage.setItem("%P3", "");
-      self.sendProcessing();
+      sessionStorage.setItem("zpub", "");
+      sessionStorage.setItem("ADR", "");
+      sessionStorage.setItem("VADDR", "");
+      await self.sendProcessing();
       setTimeout(async function() {
         console.log(self.pin);
         console.log(self.pin.join().replaceAll(",", ""));
-        self.writeData("PIN " + self.pin.join().replaceAll(",", ""));
+        await self.writeData("PIN" + self.pin.join().replaceAll(",", ""));
       }, 2000);
       // await this.readIncoming();
       var refreshIntervalId = setInterval(async function() {
@@ -490,6 +496,7 @@ export default {
         var hodler = self.readMessage;
         const hodlerString = await self.ab2str(hodler);
         var hodlerArr = hodlerString.split(",");
+        console.log(hodlerArr);
 
         for (var i = 0; i < hodlerArr.length; i++) {
           if (
@@ -519,38 +526,31 @@ export default {
               "%P3",
               hodlerArr[i].substring(3, hodlerArr[i].length)
             );
+          } else if (
+            hodlerArr[i].substring(0, 3) == "ADR" &&
+            sessionStorage.getItem("ADR").length < hodlerArr[i].length - 3
+          ) {
+            sessionStorage.setItem(
+              "ADR",
+              hodlerArr[i].substring(3, hodlerArr[i].length)
+            );
           }
         }
         if (hodlerArr.includes("PINPASS") == true) {
-          sessionStorage.setItem(
-            "zpub",
-            sessionStorage
-              .getItem("%P1")
-              .substring(3, sessionStorage.getItem("%P3").length) +
-              sessionStorage
-                .getItem("%P2")
-                .substring(3, sessionStorage.getItem("%P3").length) +
-              sessionStorage
-                .getItem("%P3")
-                .substring(3, sessionStorage.getItem("%P3").length)
-          );
-
-          const { address } = bjs.payments.p2pkh({
-            pubkey: bip32
-              .fromBase58(sessionStorage.getItem("zpub"))
-              .derive(0)
-              .derive(1).publicKey
-          });
-
-          sessionStorage.setItem("addresscheck", `${address}`);
-          console.log(`the addressString is ${address}`);
+          var p1str = sessionStorage.getItem("%P1");
+          var p2str = sessionStorage.getItem("%P2");
+          var p3str = sessionStorage.getItem("%P3");
+          sessionStorage.setItem("zpub", p1str + p2str + p3str);
+          var vaddr = await self.getAddress(0);
+          console.log("the addressString is" + vaddr);
+          sessionStorage.setItem("VADDR", vaddr);
 
           self.pinPad = false;
 
           self.$router.push("wallet");
           clearInterval(refreshIntervalId);
         }
-        if (hodlerArr.includes("PINFAIL") == true) {
+        if (hodlerArr.includes("PINFAILL") == true) {
           self.$q.notify({
             message: "ERROR: Pin failed",
             caption: "Use the Bowser wallet as a reference",
@@ -562,10 +562,31 @@ export default {
       }, 2000);
     },
     async sendProcessing() {
-      this.writeData("PROCESS");
+      await this.writeData("PROCESS");
     },
     async ab2str(buf) {
       return String.fromCharCode.apply(null, new Uint16Array(buf));
+    },
+    getAddress(addNo) {
+      function zpubToXpub(zpub) {
+        var data = b58.decode(zpub);
+        data = data.slice(4);
+        data = Buffer.concat([Buffer.from("0488b21e", "hex"), data]);
+
+        return b58.encode(data);
+      }
+      var xpub = zpubToXpub(sessionStorage.getItem("zpub"));
+      var hdNode = bjs.bip32.fromBase58(xpub);
+      console.log(hdNode.derive(0).derive(addNo).publicKey);
+
+      const { address } = bjs.payments.p2wpkh({
+          pubkey: bjs.bip32
+            .fromBase58(xpub)
+            .derive(0)
+            .derive(1).publicKey
+        })
+      console.log(address);
+      return address;
     }
   },
   created() {}

@@ -3,41 +3,84 @@
     <div class="row q-col-gutter-md justify-center">
       <div class="col-12 col-md-7 col-lg-6 q-gutter-y-md">
         <h5 class="q-pt-lg q-mb-xs">
-          Verify address: {{ btcVerifyAddress
-          }}<q-tooltip
-            >This `Verify address` MUST be the same as the one on the hardware
-            wallet!</q-tooltip
-          >
+          Build PSBT
         </h5>
         <q-card class="q-mt-lg">
           <q-card-section>
-            <q-form @submit="sendFunds" class="q-gutter-md">
+            <q-form @submit="findUtxos" class="q-gutter-md">
               <div class="row">
-                <div class="col-9">
+                <div class="col-12">
                   <q-input
                     class="q-pr-md"
                     filled
                     dense
-                    v-model="btcSendAddress"
-                    label="Bitcoin address"
+                    v-model="xPub"
+                    label="xpub/zpub"
                   ></q-input>
                 </div>
+              </div>
+              <div class="row">
                 <div class="col-3">
                   <q-input
                     filled
                     dense
-                    v-model="btcSendAmount"
-                    label="Amount"
+                    v-model="derivationStartIndex"
+                    label="derivation start index"
                   ></q-input>
+                </div>
+                <div class="col-1"></div>
+                <div class="col-3">
+                  <q-input
+                    filled
+                    dense
+                    v-model="derivationSize"
+                    label="size"
+                  ></q-input>
+                </div>
+                <div class="col-2"></div>
+                <div class="col-3">
+                  <q-btn-dropdown :label="network">
+                    <q-list>
+                      <q-item
+                        clickable
+                        v-close-popup
+                        @click="() => selectNetwork('mainnet')"
+                      >
+                        <q-item-section>
+                          <q-item-label>Mainnet</q-item-label>
+                        </q-item-section>
+                      </q-item>
+
+                      <q-item
+                        clickable
+                        v-close-popup
+                        @click="() => selectNetwork('testnet')"
+                      >
+                        <q-item-section>
+                          <q-item-label>Testnet</q-item-label>
+                        </q-item-section>
+                      </q-item>
+
+                      <q-item
+                        clickable
+                        v-close-popup
+                        @click="() => selectNetwork('simnet')"
+                      >
+                        <q-item-section>
+                          <q-item-label>Simnet</q-item-label>
+                        </q-item-section>
+                      </q-item>
+                    </q-list>
+                  </q-btn-dropdown>
                 </div>
               </div>
 
               <q-btn
                 unelevated
                 color="primary"
-                :disable="btcSendAddress == '' || btcSendAmount < 0.0001"
+                :disable="xPub == ''"
                 type="submit"
-                >Send bitcoin</q-btn
+                >Find UTXOs</q-btn
               >
             </q-form>
           </q-card-section>
@@ -60,67 +103,6 @@
           </q-card-section>
         </q-card>
       </div>
-      <div class="col-12 col-md-3 q-gutter-y-md">
-        <q-card>
-          <q-card-section>
-            <h6 class="text-subtitle1 q-mt-none q-mb-sm">
-              Receive address
-              <q-btn
-                flat
-                @click="getFreshAddress"
-                dense
-                color="primary"
-                label="get fresh address"
-              />
-            </h6>
-          </q-card-section>
-          <center>
-            <vue-qrcode style="width:50%;" :value="btcCurrentAddress" />
-
-            <q-card-section class="q-px-auto">
-              <q-btn
-                dense
-                unelevated
-                color="primary"
-                @click="copyToClip(btcCurrentAddress)"
-              >
-                <div class="cursor-pointer">
-                  <q-tooltip> Copy to clipboard </q-tooltip>
-                  {{ btcCurrentAddress }}
-                </div>
-              </q-btn>
-            </q-card-section>
-          </center>
-        </q-card>
-
-        <q-card>
-          <q-card-section>
-            <h6 class="text-subtitle1 q-mt-none q-mb-sm">
-              Bowser uses
-              <a target="_blank" href="https://mempool.space">mempool.space</a>
-              api for transaction data,<br />you can also use use your own
-              mempool.space
-            </h6>
-          </q-card-section>
-          <q-card-section class="q-px-auto">
-            <q-btn unelevated color="primary" icon="edit">
-              <div class="cursor-pointer">
-                <q-tooltip> Point to another Mempool </q-tooltip>
-                {{ this.mempool.endpoint }}
-                <q-popup-edit v-model="mempool.endpoint">
-                  <q-input color="accent" v-model="mempool.endpoint"> </q-input>
-                  <center>
-                    <q-btn flat dense @click="updateMempool()" v-close-popup
-                      >set</q-btn
-                    >
-                    <q-btn flat dense v-close-popup>cancel</q-btn>
-                  </center>
-                </q-popup-edit>
-              </div>
-            </q-btn>
-          </q-card-section>
-        </q-card>
-      </div>
     </div>
   </q-page>
 </template>
@@ -130,15 +112,16 @@ const bjs = require("bitcoinjs-lib");
 var b58 = require("bs58check");
 import { QSpinnerGears } from "quasar";
 import { copyToClipboard } from "quasar";
-import VueQrcode from "vue-qrcode";
-import axios from 'axios'
+
+import axios from "axios";
 
 export default {
-  components: {
-    VueQrcode
-  },
   data() {
     return {
+      xPub: "",
+      derivationStartIndex: 0,
+      derivationSize: 10,
+      network: "testnet",
       mempool: {
         endpoint: "https://mempool.space"
       },
@@ -176,6 +159,9 @@ export default {
     };
   },
   methods: {
+    selectNetwork(network) {
+      this.network = network;
+    },
     //READING SERIAL//
 
     async readPort() {
@@ -262,13 +248,14 @@ export default {
       }, 2000);
     },
 
-    async sendFunds() {
-      console.log('############### sendFunds')
-      const x = await axios({
-        method: 'GET',
-        url: 'mempool/api/tx/0817faa843ea242d8cbd558a4fc977f2efbdc6d8aa7213a46fc419d488920a45',
-      })
-      console.log('x', x)
+    async findUtxos() {
+      console.log("############### findUtxos");
+      // const x = await axios({
+      //   method: "GET",
+      //   url:
+      //     "mempool/api/tx/0817faa843ea242d8cbd558a4fc977f2efbdc6d8aa7213a46fc419d488920a45"
+      // });
+      // console.log("x", x);
     },
     async updateMempool() {
       self = this;

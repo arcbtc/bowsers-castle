@@ -60,7 +60,7 @@
                     filled
                     dense
                     v-model="derivationRoot"
-                    label="derivation root"
+                    label="derivation root (eg: m/44'/0'/0'/0)"
                   ></q-input>
                 </div>
                 <div class="col-1"></div>
@@ -112,6 +112,104 @@
             />
           </q-card-section>
         </q-card>
+
+        <q-card class="q-mt-lg">
+          <q-card-section>
+            <q-form @submit="buildPsbt" class="q-gutter-md">
+              <div class="row">
+                <div class="col-9">
+                  <q-input
+                    class="q-pr-md"
+                    filled
+                    dense
+                    v-model="destinationAddress"
+                    label="destination address"
+                  ></q-input>
+                </div>
+                <div class="col-3">
+                  <q-input
+                    filled
+                    dense
+                    v-model="sentAmount"
+                    label="amount (sats)"
+                  ></q-input>
+                </div>
+              </div>
+              <div class="row">
+                <div class="col-9">
+                  <q-input
+                    class="q-pr-md"
+                    filled
+                    dense
+                    v-model="changeAddress"
+                    label="change address"
+                  ></q-input>
+                </div>
+
+                <div class="col-3">
+                  <q-btn-dropdown :label="`${feeMode} (${feeValue})`">
+                    <q-list>
+                      <q-item
+                        clickable
+                        v-close-popup
+                        @click="() => selectFee('fastestFee')"
+                      >
+                        <q-item-section>
+                          <q-item-label
+                            >Fastest Fee ({{
+                              fees.fastestFee || ""
+                            }})</q-item-label
+                          >
+                        </q-item-section>
+                      </q-item>
+
+                      <q-item
+                        clickable
+                        v-close-popup
+                        @click="() => selectFee('halfHourFee')"
+                      >
+                        <q-item-section>
+                          <q-item-label
+                            >Half Hour Fee ({{
+                              fees.halfHourFee || ""
+                            }})</q-item-label
+                          >
+                        </q-item-section>
+                      </q-item>
+
+                      <q-item
+                        clickable
+                        v-close-popup
+                        @click="() => selectFee('hourFee')"
+                      >
+                        <q-item-section>
+                          <q-item-label
+                            >Hour Fee ({{ fees.hourFee || "" }})</q-item-label
+                          >
+                        </q-item-section>
+                      </q-item>
+                      <q-item
+                        clickable
+                        v-close-popup
+                        @click="() => selectFee('minimumFee')"
+                      >
+                        <q-item-section>
+                          <q-item-label
+                            >Minimum Fee ({{
+                              fees.minimumFee || ""
+                            }})</q-item-label
+                          >
+                        </q-item-section>
+                      </q-item>
+                    </q-list>
+                  </q-btn-dropdown>
+                </div>
+              </div>
+
+              <q-btn unelevated color="primary" type="submit">Buld PSBT</q-btn>
+            </q-form>
+          </q-card-section>
+        </q-card>
       </div>
     </div>
   </q-page>
@@ -119,12 +217,10 @@
 
 <script>
 const bjs = require("bitcoinjs-lib");
-var b58 = require("bs58check");
-import { QSpinnerGears } from "quasar";
-import { copyToClipboard } from "quasar";
+const coinselect = require("coinselect");
 
 const utxoSvc = require("../services/utxo.service")("mempool");
-// const feeSvc = require("./services/fee.service")("mempool");
+const feeSvc = require("../services/fee.service")("mempool");
 const txSvc = require("../services/tx.service")("mempool");
 
 export default {
@@ -135,15 +231,6 @@ export default {
       derivationStartIndex: 0,
       derivationSize: 10,
       network: "testnet",
-
-      mempool: {
-        endpoint: "https://mempool.space"
-      },
-      btcVerifyAddress: sessionStorage.getItem("VADDR"),
-      btcAddressNo: parseInt(sessionStorage.getItem("ADR")),
-      btcCurrentAddress: "",
-      btcSendAmount: 0,
-      btcSendAddress: "",
 
       columns: [
         {
@@ -183,16 +270,29 @@ export default {
       pagination: {
         rowsPerPage: 30
       },
-      data: []
+      data: [],
+      destinationAddress: "",
+      sentAmount: 0,
+      changeAddress: "",
+
+      fees: {},
+      feeMode: "fastestFee",
+      feeValue: ""
     };
   },
   methods: {
     selectNetwork(network) {
       this.network = network;
     },
+    selectFee(feeMode) {
+      this.feeMode = feeMode;
+      this.feeValue = this.fees[this.feeMode];
+    },
     async findUtxos() {
-      console.log("############### findUtxos");
       try {
+        // do not make async
+        this.updateFees();
+
         const xPub = this.xPub.toLowerCase().startsWith("zpub")
           ? this.zpubToXpub(this.xPub)
           : this.xPub;
@@ -240,11 +340,49 @@ export default {
           message: err.message || err
         });
       }
+    },
+    async updateFees() {
+      try {
+        this.fees = await feeSvc.getRecommendedFees();
+        this.feeValue = this.fees[this.feeMode];
+      } catch (err) {
+        self.$q.notify({
+          icon: "error",
+          message: err.message || err
+        });
+      }
+    },
+    async buildPsbt() {
+      try {
+        const x = this.data.filter(d => d.txid);
+        const utxoList = await this.enrichUtxoList(x);
 
-      // const tx = await txSvc.getTx(
-      //   "0817faa843ea242d8cbd558a4fc977f2efbdc6d8aa7213a46fc419d488920a45"
-      // );
-      // console.log("tx", tx);
+        const txData = coinselect(utxoList, destAddressList, fees.fastestFee);
+      } catch (err) {
+        self.$q.notify({
+          icon: "error",
+          message: err.message || err
+        });
+      }
+    },
+    async enrichUtxoList(utxoList) {
+      const enrichedUtxoList = [];
+      for (const utxo of utxoList) {
+        const tx = await txSvc.getTx(utxo.txid);
+        const output = tx.vout[utxo.vout];
+        const enrichedUtxo = Object.assign(
+          {
+            witnessUtxo: {
+              script: Buffer.from(output.scriptpubkey, "hex"),
+              value: utxo.value
+            }
+          },
+          utxo
+        );
+        enrichedUtxoList.push(enrichedUtxo);
+        // TODO: check for non-witness output (requires TX Hex)
+      }
+      return enrichedUtxoList;
     },
     deriveAddresses(node, op = {}) {
       const start = op.start || 0;
@@ -269,147 +407,10 @@ export default {
       data = data.slice(4);
       data = Buffer.concat([Buffer.from("0488b21e", "hex"), data]);
       return b58.encode(data);
-    },
-    //READING SERIAL//
-
-    async readPort() {
-      self = this;
-      try {
-        await self.port.open({ baudRate: 115200 });
-      } catch (e) {
-        try {
-          await self.reader.releaseLock();
-          self.reader = undefined;
-          await self.port.close();
-          await self.port.open({ baudRate: 115200 });
-        } catch (e) {}
-      }
-      try {
-        self.reader = self.port.readable.getReader();
-        const { value, done } = await self.reader.read();
-        if (value) {
-          self.readMessage = value;
-        }
-        await self.reader.releaseLock();
-        self.reader = undefined;
-      } catch (e) {}
-      if (self.port) {
-        try {
-          await self.port.close();
-        } catch (e) {}
-      }
-    },
-    //WRITING TO SERIAL//
-
-    async writeData(data) {
-      self = this;
-      const encoder = new TextEncoder();
-      try {
-        await self.port.open({ baudRate: 115200 });
-      } catch (e) {
-        try {
-          await self.writer.releaseLock();
-          self.writer = undefined;
-          await self.port.close();
-          await self.port.open({ baudRate: 115200 });
-        } catch (e) {}
-      }
-      try {
-        self.writer = await self.port.writable.getWriter();
-        await self.writer.write(encoder.encode(data));
-        await self.writer.releaseLock();
-        self.writer = undefined;
-      } catch (e) {}
-      if (self.port) {
-        try {
-          await self.port.close();
-        } catch (e) {}
-      }
-    },
-    async getFreshAddress() {
-      self = this;
-      self.$q.notify({
-        spinner: QSpinnerGears,
-        message: "Fetching address...",
-        timeout: 6000
-      });
-      await self.writeData("ADR");
-
-      var refreshIntervalId = setInterval(async function() {
-        await self.readPort();
-        var hodler = self.readMessage;
-        const hodlerString = await self.ab2str(hodler);
-        console.log(hodlerString);
-
-        var hodlerArr = hodlerString.split(",");
-        console.log(hodlerArr);
-        for (var i = 0; i < hodlerArr.length; i++) {
-          if (hodlerArr[i].substring(0, 3) == "ADR") {
-            sessionStorage.setItem(
-              "ADR",
-              hodlerArr[i].substring(3, hodlerArr[i].length)
-            );
-            self.btcAddressNo = parseInt(sessionStorage.getItem("ADR"));
-            clearInterval(refreshIntervalId);
-          }
-        }
-      }, 2000);
-    },
-
-    async updateMempool() {
-      self = this;
-      self.mempool.endpoint = self.mempool;
-    },
-    async getTransactions() {
-      self = this;
-      self.mempool.endpoint = self.mempool;
-    },
-    getAddress(addNo) {
-      function zpubToXpub(zpub) {
-        var data = b58.decode(zpub);
-        data = data.slice(4);
-        data = Buffer.concat([Buffer.from("0488b21e", "hex"), data]);
-
-        return b58.encode(data);
-      }
-      var xpub = zpubToXpub(sessionStorage.getItem("zpub"));
-      var hdNode = bjs.bip32.fromBase58(xpub);
-      console.log(hdNode.derive(0).derive(addNo).publicKey);
-
-      const { address } = bjs.payments.p2wpkh({
-        pubkey: bjs.bip32
-          .fromBase58(xpub)
-          .derive(0)
-          .derive(addNo).publicKey
-      });
-      self.btcCurrentAddress = address;
-    },
-    copyToClip(data) {
-      self = this;
-      copyToClipboard(data)
-        .then(() => {
-          self.$q.notify({
-            icon: "content_copy",
-            message: "Copied"
-          });
-        })
-        .catch(() => {
-          self.$q.notify({
-            icon: "error",
-            message: "Copy failed"
-          });
-        });
-    },
-    async ab2str(buf) {
-      return String.fromCharCode.apply(null, new Uint16Array(buf));
     }
   },
-  created() {
-    self = this;
-    if (!sessionStorage.getItem("ADR")) {
-      self.btcAddressNo = 1;
-    }
-    self.getAddress(self.btcAddressNo);
+  async mounted() {
+    this.updateFees();
   }
 };
 </script>

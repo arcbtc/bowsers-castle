@@ -106,6 +106,7 @@
               :data="data"
               :columns="columns"
               row-key="id"
+              :pagination="pagination"
               dark
               color="amber"
             />
@@ -134,6 +135,7 @@ export default {
       derivationStartIndex: 0,
       derivationSize: 10,
       network: "testnet",
+
       mempool: {
         endpoint: "https://mempool.space"
       },
@@ -142,6 +144,7 @@ export default {
       btcCurrentAddress: "",
       btcSendAmount: 0,
       btcSendAddress: "",
+
       columns: [
         {
           name: "address",
@@ -177,6 +180,9 @@ export default {
           sortable: true
         }
       ],
+      pagination: {
+        rowsPerPage: 30
+      },
       data: []
     };
   },
@@ -217,10 +223,10 @@ export default {
             });
             return;
           }
-          utxos.forEach(utxo => {
+          utxos.forEach((utxo, i) => {
             data.push({
               id: data.length,
-              address: addressList[index],
+              address: i === 0 ? addressList[index] : "",
               txid: utxo.txid,
               value: utxo.value,
               vout: utxo.vout

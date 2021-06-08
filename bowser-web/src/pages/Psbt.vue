@@ -9,7 +9,7 @@
           <q-card-section>
             <q-form @submit="findUtxos" class="q-gutter-md">
               <div class="row">
-                <div class="col-12">
+                <div class="col-9">
                   <q-input
                     class="q-pr-md"
                     filled
@@ -18,33 +18,13 @@
                     label="xpub/zpub"
                   ></q-input>
                 </div>
-              </div>
-              <div class="row">
-                <div class="col-3">
-                  <q-input
-                    filled
-                    dense
-                    v-model="derivationStartIndex"
-                    label="derivation start index"
-                  ></q-input>
-                </div>
-                <div class="col-1"></div>
-                <div class="col-3">
-                  <q-input
-                    filled
-                    dense
-                    v-model="derivationSize"
-                    label="size"
-                  ></q-input>
-                </div>
-                <div class="col-2"></div>
                 <div class="col-3">
                   <q-btn-dropdown :label="network">
                     <q-list>
                       <q-item
                         clickable
                         v-close-popup
-                        @click="() => selectNetwork('mainnet')"
+                        @click="() => selectNetwork('bitcoin')"
                       >
                         <q-item-section>
                           <q-item-label>Mainnet</q-item-label>
@@ -64,15 +44,44 @@
                       <q-item
                         clickable
                         v-close-popup
-                        @click="() => selectNetwork('simnet')"
+                        @click="() => selectNetwork('regtest')"
                       >
                         <q-item-section>
-                          <q-item-label>Simnet</q-item-label>
+                          <q-item-label>Regtest</q-item-label>
                         </q-item-section>
                       </q-item>
                     </q-list>
                   </q-btn-dropdown>
                 </div>
+              </div>
+              <div class="row">
+                <div class="col-3">
+                  <q-input
+                    filled
+                    dense
+                    v-model="derivationRoot"
+                    label="derivation root"
+                  ></q-input>
+                </div>
+                <div class="col-1"></div>
+                <div class="col-3">
+                  <q-input
+                    filled
+                    dense
+                    v-model="derivationStartIndex"
+                    label="derivation start index"
+                  ></q-input>
+                </div>
+                <div class="col-1"></div>
+                <div class="col-3">
+                  <q-input
+                    filled
+                    dense
+                    v-model="derivationSize"
+                    label="size"
+                  ></q-input>
+                </div>
+                <div class="col-2"></div>
               </div>
 
               <q-btn
@@ -89,7 +98,7 @@
         <q-card class="q-mt-lg">
           <q-card-section>
             <h6 class="text-subtitle1 q-mt-none q-mb-sm">
-              Transactions:
+              UTXOs:
             </h6>
           </q-card-section>
           <q-card-section>
@@ -113,12 +122,15 @@ var b58 = require("bs58check");
 import { QSpinnerGears } from "quasar";
 import { copyToClipboard } from "quasar";
 
-import axios from "axios";
+// const utxoSvc = require("./services/utxo.service")("mempool");
+// const feeSvc = require("./services/fee.service")("mempool");
+const txSvc = require("../services/tx.service")("mempool");
 
 export default {
   data() {
     return {
       xPub: "",
+      derivationRoot: "0",
       derivationStartIndex: 0,
       derivationSize: 10,
       network: "testnet",
@@ -161,6 +173,58 @@ export default {
   methods: {
     selectNetwork(network) {
       this.network = network;
+    },
+    async findUtxos() {
+      console.log("############### findUtxos");
+      try {
+        const xPub = this.xPub.toLowerCase().startsWith("zpub")
+          ? this.zpubToXpub(this.xPub)
+          : this.xPub;
+        const network = bjs.networks[this.network];
+        const hdNode = bjs.bip32.fromBase58(xPub, network);
+
+        const addressList = this.deriveAddresses(hdNode, {
+          rootPath: this.derivationRoot,
+          start: this.derivationStartIndex,
+          size: this.derivationSize,
+          network
+        });
+        console.log("addressList", addressList);
+      } catch (err) {
+        self.$q.notify({
+          icon: "error",
+          message: err.message || err
+        });
+      }
+
+      // const tx = await txSvc.getTx(
+      //   "0817faa843ea242d8cbd558a4fc977f2efbdc6d8aa7213a46fc419d488920a45"
+      // );
+      // console.log("tx", tx);
+    },
+    deriveAddresses(node, op = {}) {
+      const start = op.start || 0;
+      const size = op.size || 10;
+      const rootPath = op.rootPath || "m/84'/0'/0'/0";
+      const network = op.network || bjs.networks.testnet;
+
+      const addresses = [];
+      for (let i = start; i < start + size; i++) {
+        const derivationPath = `${rootPath}/${i}`;
+        const publicKey = node.derivePath(derivationPath).publicKey;
+        const payment = bjs.payments.p2wpkh({
+          pubkey: publicKey,
+          network
+        });
+        addresses.push(payment.address);
+      }
+      return addresses;
+    },
+    zpubToXpub(zpub) {
+      var data = b58.decode(zpub);
+      data = data.slice(4);
+      data = Buffer.concat([Buffer.from("0488b21e", "hex"), data]);
+      return b58.encode(data);
     },
     //READING SERIAL//
 
@@ -248,15 +312,6 @@ export default {
       }, 2000);
     },
 
-    async findUtxos() {
-      console.log("############### findUtxos");
-      // const x = await axios({
-      //   method: "GET",
-      //   url:
-      //     "mempool/api/tx/0817faa843ea242d8cbd558a4fc977f2efbdc6d8aa7213a46fc419d488920a45"
-      // });
-      // console.log("x", x);
-    },
     async updateMempool() {
       self = this;
       self.mempool.endpoint = self.mempool;

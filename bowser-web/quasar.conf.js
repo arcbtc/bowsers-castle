@@ -74,7 +74,17 @@ module.exports = function (/* ctx */) {
     devServer: {
       https: false,
       port: 8080,
-      open: true // opens browser window automatically
+      open: true, // opens browser window automatically
+      proxy: {
+        // proxy all requests starting with /mempool to mempool.space
+        '/mempool': {
+          target: 'https://mempool.space/testnet/',
+          changeOrigin: true,
+          pathRewrite: {
+            '^/mempool': ''
+          }
+        }
+      }
     },
 
     // https://v1.quasar.dev/quasar-cli/quasar-conf-js#Property%3A-framework

@@ -1,7 +1,7 @@
 <template>
   <q-page>
     <div class="row q-col-gutter-md justify-center">
-      <div class="col-12 col-md-7 col-lg-6 q-gutter-y-md">
+      <div class="col-12 col-md-10 col-lg-10 q-gutter-y-md">
         <h5 class="q-pt-lg q-mb-xs">
           Build PSBT
         </h5>
@@ -27,7 +27,7 @@
                         @click="() => selectNetwork('bitcoin')"
                       >
                         <q-item-section>
-                          <q-item-label>Mainnet</q-item-label>
+                          <q-item-label>Bitcoin</q-item-label>
                         </q-item-section>
                       </q-item>
 
@@ -105,7 +105,7 @@
             <q-table
               :data="data"
               :columns="columns"
-              row-key="name"
+              row-key="id"
               dark
               color="amber"
             />
@@ -122,7 +122,7 @@ var b58 = require("bs58check");
 import { QSpinnerGears } from "quasar";
 import { copyToClipboard } from "quasar";
 
-// const utxoSvc = require("./services/utxo.service")("mempool");
+const utxoSvc = require("../services/utxo.service")("mempool");
 // const feeSvc = require("./services/fee.service")("mempool");
 const txSvc = require("../services/tx.service")("mempool");
 
@@ -144,30 +144,40 @@ export default {
       btcSendAddress: "",
       columns: [
         {
-          name: "desc",
+          name: "address",
           required: true,
-          label: "Transaction id",
+          label: "Address",
           align: "left",
-          field: row => row.name,
-          format: val => `${val}`,
+          field: row => row.address,
+          format: val => `${val || ""}`,
           sortable: true
         },
+
         {
           name: "amount",
           align: "center",
           label: "Amount",
-          field: "amount",
+          field: "value",
           sortable: true
         },
-        { name: "date", label: "Date", field: "date", sortable: true }
-      ],
-      data: [
         {
-          name: "12c6DSiU4Rq3P4ZxziKxzrL5LmMBrzjrJX",
-          amount: 159,
-          date: "10.10.21"
+          name: "vout",
+          align: "center",
+          label: "VOut",
+          field: "vout",
+          sortable: true
+        },
+        {
+          name: "txid",
+          required: false,
+          label: "Transaction ID",
+          align: "left",
+          field: row => row.txid,
+          format: val => `${val || ""}`,
+          sortable: true
         }
-      ]
+      ],
+      data: []
     };
   },
   methods: {
@@ -189,7 +199,35 @@ export default {
           size: this.derivationSize,
           network
         });
-        console.log("addressList", addressList);
+        this.data = addressList.map((address, index) => ({
+          id: index,
+          address
+        }));
+        const utxoPromisses = addressList.map(address => {
+          return utxoSvc.getUtxosForAddress(address);
+        });
+        const allUtxos = await Promise.all(utxoPromisses);
+        console.log("allUtxos", allUtxos);
+        const data = [];
+        allUtxos.forEach((utxos, index) => {
+          if (!utxos.length) {
+            data.push({
+              id: data.length,
+              address: addressList[index]
+            });
+            return;
+          }
+          utxos.forEach(utxo => {
+            data.push({
+              id: data.length,
+              address: addressList[index],
+              txid: utxo.txid,
+              value: utxo.value,
+              vout: utxo.vout
+            });
+          });
+        });
+        this.data = data;
       } catch (err) {
         self.$q.notify({
           icon: "error",

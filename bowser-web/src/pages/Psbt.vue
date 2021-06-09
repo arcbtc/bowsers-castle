@@ -377,6 +377,8 @@ export default {
             "Cannot select coins using the provided UTXO set and coin selection algorithm!"
           );
         }
+        const psbt = this.txDataToPsbt(txData, this.changeAddress);
+        console.log("psbt.toBase64()", psbt.toBase64());
       } catch (err) {
         console.error(err);
         this.$q.notify({
@@ -384,6 +386,29 @@ export default {
           message: err.message || err
         });
       }
+    },
+    txDataToPsbt(txData, changeAddress) {
+      const psbt = new bjs.Psbt({
+        network: bjs.networks[this.network]
+      });
+
+      txData.inputs.forEach(input => {
+        psbt.addInput({
+          hash: input.txid,
+          index: input.vout,
+          witnessUtxo: input.witnessUtxo,
+          value: input.value
+        });
+      });
+
+      txData.outputs.forEach(out => {
+        if (!out.address) {
+          out.address = changeAddress;
+        }
+        psbt.addOutput(out);
+      });
+
+      return psbt;
     },
     async enrichUtxoList(utxoList) {
       const enrichedUtxoList = [];

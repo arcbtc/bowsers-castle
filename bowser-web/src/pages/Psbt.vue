@@ -118,7 +118,7 @@
           </q-card-section>
           <q-card-section>
             <q-table
-              :data="data"
+              :data="tableData"
               :columns="columns"
               row-key="id"
               :pagination="pagination"
@@ -266,6 +266,11 @@ export default {
       feeMode: "fastestFee",
       feeValue: "",
 
+      tableData: [],
+      utxoList: [],
+      addressList: [],
+      base64Psbt: "",
+
       columns: [
         {
           name: "address",
@@ -304,11 +309,6 @@ export default {
       pagination: {
         rowsPerPage: 30
       },
-
-      data: [],
-      utxoList: [],
-      base64Psbt: "",
-
       showEmptyAddresses: false
     };
   },
@@ -322,7 +322,7 @@ export default {
     },
     toggleEmptyAddresses() {
       this.showEmptyAddresses = !this.showEmptyAddresses;
-      this.data = this.showEmptyAddresses
+      this.tableData = this.showEmptyAddresses
         ? this.utxoList
         : this.utxoList.filter(d => d.txid);
     },
@@ -331,52 +331,62 @@ export default {
         // no need to 'await'
         this.updateFees();
 
-        const xPub = this.xPub.toLowerCase().startsWith("zpub")
-          ? this.zpubToXpub(this.xPub)
-          : this.xPub;
-        const network = bjs.networks[this.network];
-        const hdNode = bjs.bip32.fromBase58(xPub, network);
+        const allUtxos = await this.fetchUtxoListForMasterPubKey(this.xPub);
+        const tableData = this.utxoListToTableData(allUtxos);
 
-        const addressList = this.deriveAddresses(hdNode, {
-          rootPath: this.derivationRoot,
-          start: this.derivationStartIndex,
-          size: this.derivationSize,
-          network
-        });
-
-        const utxoPromisses = addressList.map(address => {
-          return utxoSvc.getUtxosForAddress(address);
-        });
-        const allUtxos = await Promise.all(utxoPromisses);
-
-        const data = [];
-        allUtxos.forEach((utxos, index) => {
-          if (!utxos.length) {
-            data.push({
-              id: data.length,
-              address: addressList[index]
-            });
-            return;
-          }
-          utxos.forEach((utxo, i) => {
-            data.push({
-              id: data.length,
-              address: i === 0 ? addressList[index] : "",
-              txid: utxo.txid,
-              value: utxo.value,
-              vout: utxo.vout
-            });
-          });
-        });
-        this.utxoList = data.concat();
-        this.data = this.showEmptyAddresses ? data : data.filter(d => d.txid);
+        this.utxoList = tableData.concat();
+        this.tableData = this.showEmptyAddresses
+          ? tableData
+          : tableData.filter(d => d.txid);
       } catch (err) {
         console.error(err);
         this.$q.notify({
           icon: "error",
+          type: "warning",
           message: err.message || err
         });
       }
+    },
+    utxoListToTableData(allUtxos) {
+      const data = [];
+      allUtxos.forEach((utxos, index) => {
+        if (!utxos.length) {
+          data.push({
+            id: data.length,
+            address: this.addressList[index]
+          });
+          return;
+        }
+        utxos.forEach((utxo, i) => {
+          data.push({
+            id: data.length,
+            address: i === 0 ? this.addressList[index] : "",
+            txid: utxo.txid,
+            value: utxo.value,
+            vout: utxo.vout
+          });
+        });
+      });
+      return data;
+    },
+    async fetchUtxoListForMasterPubKey(masterPubKey) {
+      const xPub = masterPubKey.toLowerCase().startsWith("zpub")
+        ? this.zpubToXpub(masterPubKey)
+        : masterPubKey;
+      const network = bjs.networks[this.network];
+      const hdNode = bjs.bip32.fromBase58(xPub, network);
+
+      this.addressList = this.deriveAddresses(hdNode, {
+        rootPath: this.derivationRoot,
+        start: this.derivationStartIndex,
+        size: this.derivationSize,
+        network
+      });
+
+      const utxoPromisses = this.addressList.map(address => {
+        return utxoSvc.getUtxosForAddress(address);
+      });
+      return Promise.all(utxoPromisses);
     },
     async updateFees() {
       try {
@@ -386,6 +396,7 @@ export default {
         console.error(err);
         this.$q.notify({
           icon: "error",
+          type: "warning",
           message: err.message || err
         });
       }
@@ -398,7 +409,7 @@ export default {
         if (!this.changeAddress) {
           throw new Error("Change address is missing");
         }
-        const x = this.data.filter(d => d.txid);
+        const x = this.utxoList.filter(d => d.txid);
         const utxoList = await this.enrichUtxoList(x);
         const destination = {
           address: this.destinationAddress,
@@ -419,6 +430,7 @@ export default {
         console.error(err);
         this.$q.notify({
           icon: "error",
+          type: "warning",
           message: err.message || err
         });
       }
@@ -484,7 +496,7 @@ export default {
       return addresses;
     },
     zpubToXpub(zpub) {
-      var data = b58.decode(zpub);
+      let data = b58.decode(zpub);
       data = data.slice(4);
       data = Buffer.concat([Buffer.from("0488b21e", "hex"), data]);
       return b58.encode(data);

@@ -208,6 +208,18 @@
               </div>
 
               <q-btn unelevated color="primary" type="submit">Buld PSBT</q-btn>
+              <div class="row">
+                <div class="col-12">
+                  <q-input
+                    class="q-pr-md"
+                    filled
+                    dense
+                    autogrow
+                    v-model="base64Psbt"
+                    label="base64 PSBT"
+                  ></q-input>
+                </div>
+              </div>
             </q-form>
           </q-card-section>
         </q-card>
@@ -278,7 +290,9 @@ export default {
 
       fees: {},
       feeMode: "fastestFee",
-      feeValue: ""
+      feeValue: "",
+
+      base64Psbt: ""
     };
   },
   methods: {
@@ -378,6 +392,7 @@ export default {
           );
         }
         const psbt = this.txDataToPsbt(txData, this.changeAddress);
+        this.base64Psbt = psbt.toBase64();
         console.log("psbt.toBase64()", psbt.toBase64());
       } catch (err) {
         console.error(err);

@@ -97,9 +97,24 @@
 
         <q-card class="q-mt-lg">
           <q-card-section>
-            <h6 class="text-subtitle1 q-mt-none q-mb-sm">
-              UTXOs:
-            </h6>
+            <div class="row">
+              <div class="col-6">
+                <h6 class="text-subtitle1 q-mt-none q-mb-sm">
+                  UTXO List
+                </h6>
+              </div>
+              <div class="col-6">
+                <div align="right">
+                  <q-btn
+                    @click="toggleEmptyAddresses"
+                    unelevated
+                    color="secondary"
+                    >{{ showEmptyAddresses ? "Hide" : "Show" }} Empty
+                    Addresses</q-btn
+                  >
+                </div>
+              </div>
+            </div>
           </q-card-section>
           <q-card-section>
             <q-table
@@ -244,6 +259,12 @@ export default {
       derivationStartIndex: 0,
       derivationSize: 10,
       network: "testnet",
+      destinationAddress: "",
+      sentAmount: 0,
+      changeAddress: "",
+      fees: {},
+      feeMode: "fastestFee",
+      feeValue: "",
 
       columns: [
         {
@@ -283,16 +304,12 @@ export default {
       pagination: {
         rowsPerPage: 30
       },
+
       data: [],
-      destinationAddress: "",
-      sentAmount: 0,
-      changeAddress: "",
+      utxoList: [],
+      base64Psbt: "",
 
-      fees: {},
-      feeMode: "fastestFee",
-      feeValue: "",
-
-      base64Psbt: ""
+      showEmptyAddresses: false
     };
   },
   methods: {
@@ -303,9 +320,15 @@ export default {
       this.feeMode = feeMode;
       this.feeValue = this.fees[this.feeMode];
     },
+    toggleEmptyAddresses() {
+      this.showEmptyAddresses = !this.showEmptyAddresses;
+      this.data = this.showEmptyAddresses
+        ? this.utxoList
+        : this.utxoList.filter(d => d.txid);
+    },
     async findUtxos() {
       try {
-        // do not make async
+        // no need to 'await'
         this.updateFees();
 
         const xPub = this.xPub.toLowerCase().startsWith("zpub")
@@ -320,15 +343,12 @@ export default {
           size: this.derivationSize,
           network
         });
-        this.data = addressList.map((address, index) => ({
-          id: index,
-          address
-        }));
+
         const utxoPromisses = addressList.map(address => {
           return utxoSvc.getUtxosForAddress(address);
         });
         const allUtxos = await Promise.all(utxoPromisses);
-        console.log("allUtxos", allUtxos);
+
         const data = [];
         allUtxos.forEach((utxos, index) => {
           if (!utxos.length) {
@@ -348,7 +368,8 @@ export default {
             });
           });
         });
-        this.data = data;
+        this.utxoList = data.concat();
+        this.data = this.showEmptyAddresses ? data : data.filter(d => d.txid);
       } catch (err) {
         console.error(err);
         this.$q.notify({

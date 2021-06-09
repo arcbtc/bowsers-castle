@@ -314,6 +314,7 @@ export default {
   },
   methods: {
     async findUtxos() {
+      const dismissNotification = this.showMesage("Searching UTXOs");
       try {
         // no need to 'await'
         this.updateFees();
@@ -325,8 +326,11 @@ export default {
         this.tableData = this.showEmptyAddresses
           ? tableData
           : tableData.filter(d => d.txid);
+        this.changeAddress = this.findChangeAddress();
       } catch (err) {
         this.showError(err);
+      } finally {
+        dismissNotification();
       }
     },
     async updateFees() {
@@ -338,6 +342,7 @@ export default {
       }
     },
     async buildPsbt() {
+      const dismissNotification = this.showMesage("Building PSBT");
       try {
         if (!this.destinationAddress) {
           throw new Error("Destination address is missing");
@@ -361,9 +366,10 @@ export default {
         }
         const psbt = this.txDataToPsbt(txData, this.changeAddress);
         this.base64Psbt = psbt.toBase64();
-        console.log("psbt.toBase64()", psbt.toBase64());
       } catch (err) {
         this.showError(err);
+      } finally {
+        dismissNotification();
       }
     },
     async enrichUtxoList(utxoList) {
@@ -449,6 +455,19 @@ export default {
 
       return psbt;
     },
+    findChangeAddress() {
+      const lastUtxo = this.utxoList[this.utxoList.length - 1];
+      if (lastUtxo && lastUtxo.txid) {
+        return "";
+      }
+      for (let i = this.utxoList.length - 2; i >= 0; i--) {
+        if (this.utxoList[i] && this.utxoList[i].txid) {
+          return this.utxoList[i + 1].address;
+        }
+      }
+      return "";
+      // todo: if empty not found
+    },
     selectNetwork(network) {
       this.network = network;
     },
@@ -492,6 +511,13 @@ export default {
         icon: "error",
         type: "warning",
         message: err.message || err
+      });
+    },
+    showMesage(message = "...") {
+      return this.$q.notify({
+        timeout: 0,
+        spinner: true,
+        message
       });
     }
   },

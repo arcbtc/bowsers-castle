@@ -315,6 +315,8 @@ export default {
   methods: {
     async findUtxos() {
       const dismissNotification = this.showMesage("Searching UTXOs");
+      this.utxoList = [];
+      this.tableData = [];
       try {
         // no need to 'await'
         this.updateFees();
@@ -357,7 +359,6 @@ export default {
           value: +this.sentAmount
         };
         const txData = coinselect(utxoList, [destination], this.feeValue);
-        console.log("txData", txData);
 
         if (!txData.inputs || !txData.inputs.length) {
           throw new Error(

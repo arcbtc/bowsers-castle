@@ -131,6 +131,7 @@
                     filled
                     dense
                     v-model="sentAmount"
+                    type="number"
                     label="amount (sats)"
                   ></q-input>
                 </div>
@@ -335,7 +336,8 @@ export default {
         });
         this.data = data;
       } catch (err) {
-        self.$q.notify({
+        console.error(err);
+        this.$q.notify({
           icon: "error",
           message: err.message || err
         });
@@ -346,7 +348,8 @@ export default {
         this.fees = await feeSvc.getRecommendedFees();
         this.feeValue = this.fees[this.feeMode];
       } catch (err) {
-        self.$q.notify({
+        console.error(err);
+        this.$q.notify({
           icon: "error",
           message: err.message || err
         });
@@ -354,12 +357,29 @@ export default {
     },
     async buildPsbt() {
       try {
+        if (!this.destinationAddress) {
+          throw new Error("Destination address is missing");
+        }
+        if (!this.changeAddress) {
+          throw new Error("Change address is missing");
+        }
         const x = this.data.filter(d => d.txid);
         const utxoList = await this.enrichUtxoList(x);
+        const destination = {
+          address: this.destinationAddress,
+          value: +this.sentAmount
+        };
+        const txData = coinselect(utxoList, [destination], this.feeValue);
+        console.log("txData", txData);
 
-        const txData = coinselect(utxoList, destAddressList, fees.fastestFee);
+        if (!txData.inputs || !txData.inputs.length) {
+          throw new Error(
+            "Cannot select coins using the provided UTXO set and coin selection algorithm!"
+          );
+        }
       } catch (err) {
-        self.$q.notify({
+        console.error(err);
+        this.$q.notify({
           icon: "error",
           message: err.message || err
         });
@@ -370,16 +390,16 @@ export default {
       for (const utxo of utxoList) {
         const tx = await txSvc.getTx(utxo.txid);
         const output = tx.vout[utxo.vout];
-        const enrichedUtxo = Object.assign(
-          {
-            witnessUtxo: {
-              script: Buffer.from(output.scriptpubkey, "hex"),
-              value: utxo.value
-            }
-          },
-          utxo
-        );
-        enrichedUtxoList.push(enrichedUtxo);
+        enrichedUtxoList.push({
+          txid: utxo.txid,
+          vout: utxo.vout,
+          value: utxo.value,
+          witnessUtxo: {
+            script: Buffer.from(output.scriptpubkey, "hex"),
+            value: utxo.value
+          }
+        });
+
         // TODO: check for non-witness output (requires TX Hex)
       }
       return enrichedUtxoList;

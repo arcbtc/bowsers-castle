@@ -313,19 +313,6 @@ export default {
     };
   },
   methods: {
-    selectNetwork(network) {
-      this.network = network;
-    },
-    selectFee(feeMode) {
-      this.feeMode = feeMode;
-      this.feeValue = this.fees[this.feeMode];
-    },
-    toggleEmptyAddresses() {
-      this.showEmptyAddresses = !this.showEmptyAddresses;
-      this.tableData = this.showEmptyAddresses
-        ? this.utxoList
-        : this.utxoList.filter(d => d.txid);
-    },
     async findUtxos() {
       try {
         // no need to 'await'
@@ -339,66 +326,15 @@ export default {
           ? tableData
           : tableData.filter(d => d.txid);
       } catch (err) {
-        console.error(err);
-        this.$q.notify({
-          icon: "error",
-          type: "warning",
-          message: err.message || err
-        });
+        this.showError(err);
       }
-    },
-    utxoListToTableData(allUtxos) {
-      const data = [];
-      allUtxos.forEach((utxos, index) => {
-        if (!utxos.length) {
-          data.push({
-            id: data.length,
-            address: this.addressList[index]
-          });
-          return;
-        }
-        utxos.forEach((utxo, i) => {
-          data.push({
-            id: data.length,
-            address: i === 0 ? this.addressList[index] : "",
-            txid: utxo.txid,
-            value: utxo.value,
-            vout: utxo.vout
-          });
-        });
-      });
-      return data;
-    },
-    async fetchUtxoListForMasterPubKey(masterPubKey) {
-      const xPub = masterPubKey.toLowerCase().startsWith("zpub")
-        ? this.zpubToXpub(masterPubKey)
-        : masterPubKey;
-      const network = bjs.networks[this.network];
-      const hdNode = bjs.bip32.fromBase58(xPub, network);
-
-      this.addressList = this.deriveAddresses(hdNode, {
-        rootPath: this.derivationRoot,
-        start: this.derivationStartIndex,
-        size: this.derivationSize,
-        network
-      });
-
-      const utxoPromisses = this.addressList.map(address => {
-        return utxoSvc.getUtxosForAddress(address);
-      });
-      return Promise.all(utxoPromisses);
     },
     async updateFees() {
       try {
         this.fees = await feeSvc.getRecommendedFees();
         this.feeValue = this.fees[this.feeMode];
       } catch (err) {
-        console.error(err);
-        this.$q.notify({
-          icon: "error",
-          type: "warning",
-          message: err.message || err
-        });
+        this.showError(err);
       }
     },
     async buildPsbt() {
@@ -427,13 +363,68 @@ export default {
         this.base64Psbt = psbt.toBase64();
         console.log("psbt.toBase64()", psbt.toBase64());
       } catch (err) {
-        console.error(err);
-        this.$q.notify({
-          icon: "error",
-          type: "warning",
-          message: err.message || err
-        });
+        this.showError(err);
       }
+    },
+    async enrichUtxoList(utxoList) {
+      const enrichedUtxoList = [];
+      for (const utxo of utxoList) {
+        const tx = await txSvc.getTx(utxo.txid);
+        const output = tx.vout[utxo.vout];
+        enrichedUtxoList.push({
+          txid: utxo.txid,
+          vout: utxo.vout,
+          value: utxo.value,
+          witnessUtxo: {
+            script: Buffer.from(output.scriptpubkey, "hex"),
+            value: utxo.value
+          }
+        });
+
+        // TODO: check for non-witness output (requires TX Hex)
+      }
+      return enrichedUtxoList;
+    },
+    async fetchUtxoListForMasterPubKey(masterPubKey) {
+      const xPub = masterPubKey.toLowerCase().startsWith("zpub")
+        ? this.zpubToXpub(masterPubKey)
+        : masterPubKey;
+      const network = bjs.networks[this.network];
+      const hdNode = bjs.bip32.fromBase58(xPub, network);
+
+      this.addressList = this.deriveAddresses(hdNode, {
+        rootPath: this.derivationRoot,
+        start: this.derivationStartIndex,
+        size: this.derivationSize,
+        network
+      });
+
+      const utxoPromisses = this.addressList.map(address => {
+        return utxoSvc.getUtxosForAddress(address);
+      });
+      return Promise.all(utxoPromisses);
+    },
+    utxoListToTableData(allUtxos) {
+      const data = [];
+      allUtxos.forEach((utxos, index) => {
+        if (!utxos.length) {
+          data.push({
+            id: data.length,
+            address: this.addressList[index]
+          });
+          return;
+        }
+        utxos.forEach((utxo, i) => {
+          data.push({
+            id: data.length,
+            address: i === 0 ? this.addressList[index] : "",
+            txid: utxo.txid,
+            value: utxo.value,
+            vout: utxo.vout
+          });
+        });
+      });
+      return data;
     },
     txDataToPsbt(txData, changeAddress) {
       const psbt = new bjs.Psbt({
@@ -458,24 +449,18 @@ export default {
 
       return psbt;
     },
-    async enrichUtxoList(utxoList) {
-      const enrichedUtxoList = [];
-      for (const utxo of utxoList) {
-        const tx = await txSvc.getTx(utxo.txid);
-        const output = tx.vout[utxo.vout];
-        enrichedUtxoList.push({
-          txid: utxo.txid,
-          vout: utxo.vout,
-          value: utxo.value,
-          witnessUtxo: {
-            script: Buffer.from(output.scriptpubkey, "hex"),
-            value: utxo.value
-          }
-        });
-
-        // TODO: check for non-witness output (requires TX Hex)
-      }
-      return enrichedUtxoList;
+    selectNetwork(network) {
+      this.network = network;
+    },
+    selectFee(feeMode) {
+      this.feeMode = feeMode;
+      this.feeValue = this.fees[this.feeMode];
+    },
+    toggleEmptyAddresses() {
+      this.showEmptyAddresses = !this.showEmptyAddresses;
+      this.tableData = this.showEmptyAddresses
+        ? this.utxoList
+        : this.utxoList.filter(d => d.txid);
     },
     deriveAddresses(node, op = {}) {
       const start = op.start || 0;
@@ -500,6 +485,14 @@ export default {
       data = data.slice(4);
       data = Buffer.concat([Buffer.from("0488b21e", "hex"), data]);
       return b58.encode(data);
+    },
+    showError(err) {
+      console.error(err);
+      this.$q.notify({
+        icon: "error",
+        type: "warning",
+        message: err.message || err
+      });
     }
   },
   async mounted() {
